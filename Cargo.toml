@@ -1,0 +1,17 @@
+[package]
+name = "gpu-homework"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arguments = "0.7.2"
+glam = "0.25.0"
+image = "0.24.9"
+rayon = "1.9.0"
+vulkano = "0.34.1"
+vulkano-shaders = "0.34.0"
+
+[profile.dev]
+opt-level = 1
