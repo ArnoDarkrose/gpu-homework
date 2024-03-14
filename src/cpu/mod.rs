@@ -1,2 +1,2 @@
-pub mod marching;
+pub mod setup;
 pub mod sdf;
