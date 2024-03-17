@@ -1,4 +1,4 @@
-use glam::{Vec3, UVec2};
+use glam::{UVec2, Mat4, Vec3};
 use std::sync::Arc;
 
 use vulkano::{
@@ -31,6 +31,16 @@ use vulkano::{
     },
     sync::{self, GpuFuture, future::{FenceSignalFuture, NowFuture}},
 };
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+struct LaunchInfo {
+    cam_pos: Vec3,
+    fov: f32,
+    lookat: Mat4
+}
+
+//unsafe impl bytemuck::Pod for Uniform {}
 
 fn select_physical(instance: Arc<Instance>) -> Arc<PhysicalDevice> {
     instance
@@ -116,11 +126,27 @@ pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> 
 
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone(), Default::default());
 
+    let input_info = LaunchInfo {fov, cam_pos, lookat: crate::cpu::setup::lookat_matrix(cam_pos, view_vector, Vec3::new(0.0, 1.0, 0.0))};
+    let launch_info_buffer = Buffer::new_slice::<u8>(
+        mem_allocator.clone(), 
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER,
+            ..Default::default()
+        }, 
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+            ..Default::default()
+        }, 
+        bytemuck::bytes_of(&input_info).len() as u64
+    ).unwrap();
+
+    launch_info_buffer.write().unwrap().swap_with_slice(bytemuck::bytes_of_mut(&mut input_info.clone()));
+
     let layout = compute_pipeline.layout().set_layouts().first().unwrap();    
     let set = PersistentDescriptorSet::new(
         &descriptor_set_allocator,
         layout.clone(),
-        [WriteDescriptorSet::image_view(0, view)],
+        [WriteDescriptorSet::image_view(0, view), WriteDescriptorSet::buffer(1, launch_info_buffer)],
         []
     ).unwrap();
 

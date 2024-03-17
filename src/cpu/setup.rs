@@ -11,7 +11,7 @@ fn cam_dir(fov: f32, size: Vec2, frag_coord: Vec2) -> Vec3 {
     Vec3::new(xy.x, -xy.y, -z).normalize()
 }
 
-fn lookat_matrix(cam_pos: Vec3, center: Vec3, up: Vec3) -> Mat4 {
+pub(crate) fn lookat_matrix(cam_pos: Vec3, center: Vec3, up: Vec3) -> Mat4 {
     let f = (center - cam_pos).normalize();
     let s = f.cross(up).normalize();
     let u = s.cross(f);
@@ -115,8 +115,13 @@ pub fn phong_illumination(ambient: Vec3, diffuse: Vec3, specular: Vec3, alpha: f
     color
 }
 
-pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+pub fn launch_par(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let pixel_count = Arc::new(Mutex::new(0));
+    let view_to_world = lookat_matrix(
+        cam_pos, 
+        view_vector, 
+        Vec3::new(0.0, 1.0, 0.0)
+    );
 
     ImageBuffer::from_par_fn(resolution.x, resolution.y, |x, y| {
         let view_dir = cam_dir(
@@ -125,11 +130,35 @@ pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> 
             Vec2::new(x as f32, y as f32)
         );
 
-        let view_to_world = lookat_matrix(
-            cam_pos, 
-            view_vector, 
-            Vec3::new(0.0, 1.0, 0.0)
+        let world_dir = (view_to_world * Vec4::new(view_dir.x, view_dir.y, view_dir.z, 0.0)).xyz();
+
+        let color = render(cam_pos, world_dir, MIN_DIST, MAX_DIST);
+
+        let mut pixel_count = pixel_count.lock().unwrap();
+        *pixel_count += 1;
+        if *pixel_count % (resolution.x * resolution.y / 10) == 0 {
+            println!("Rendered {}% cpu_image", *pixel_count * 100 / (resolution.x * resolution.y))
+        }
+
+        Rgba([(color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8, 255u8])
+    })
+}
+
+pub fn launch_linear(cam_pos: Vec3, resolution: UVec2, fov:f32, view_vector: Vec3) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let pixel_count = Arc::new(Mutex::new(0));
+    let view_to_world = lookat_matrix(
+        cam_pos, 
+        view_vector, 
+        Vec3::new(0.0, 1.0, 0.0)
+    );
+
+    ImageBuffer::from_fn(resolution.x, resolution.y, |x, y| {
+        let view_dir = cam_dir(
+            fov, 
+            Vec2::new(resolution.x as f32, resolution.y as f32), 
+            Vec2::new(x as f32, y as f32)
         );
+
         let world_dir = (view_to_world * Vec4::new(view_dir.x, view_dir.y, view_dir.z, 0.0)).xyz();
 
         let color = render(cam_pos, world_dir, MIN_DIST, MAX_DIST);

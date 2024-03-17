@@ -37,7 +37,7 @@ fn main() {
 
     let((buf, future), cpu_img) = rayon::join(
         || gpu::setup::launch(cam_pos, resolution, fov, view_vector), 
-        || cpu::setup::launch(cam_pos, resolution, fov, view_vector)
+        || cpu::setup::launch_par(cam_pos, resolution, fov, view_vector)
     );
 
     println!("Saving cpu_image...");
@@ -47,5 +47,7 @@ fn main() {
 
     let buffer_content = buf.read().expect("failed to read buffer");
     let gpu_img = ImageBuffer::<Rgba<u8>, _>::from_raw(resolution.x, resolution.y, &buffer_content[..]).unwrap();
+    
+    println!("Saving gpu image");
     gpu_img.save("gpu_image.png").expect("failed to save image");
 }
