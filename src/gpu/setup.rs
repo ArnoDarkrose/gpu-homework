@@ -6,7 +6,7 @@ use vulkano::{
     instance::{Instance, InstanceCreateInfo},
     device:: {
         QueueFlags, Device, DeviceCreateInfo, QueueCreateInfo,
-        physical::{PhysicalDeviceType, PhysicalDevice}, Queue
+        physical::{PhysicalDeviceType, PhysicalDevice}, Queue, DeviceExtensions
     },
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, subbuffer::Subbuffer},
@@ -29,7 +29,8 @@ use vulkano::{
         PersistentDescriptorSet, WriteDescriptorSet,
         allocator::StandardDescriptorSetAllocator
     },
-    sync::{self, GpuFuture, future::{FenceSignalFuture, NowFuture}},
+    sync::{self, GpuFuture, future::{FenceSignalFuture, NowFuture}, PipelineStage},
+    query::{QueryPool, QueryPoolCreateInfo, QueryType}
 };
 
 #[repr(C)]
@@ -60,6 +61,13 @@ fn select_queue_family(physical: Arc<PhysicalDevice>) -> u32 {
     physical
         .queue_family_properties()
         .iter()
+        .filter(|p| {
+            if let Some(_) = p.timestamp_valid_bits {
+                true
+            } else {
+                false
+            }
+        })
         .position(|properties|  properties.queue_flags.contains(QueueFlags::GRAPHICS))
         .expect("failed to create queue") as u32
 }
@@ -72,12 +80,16 @@ fn create_device(physical: Arc<PhysicalDevice>, queue_family_index: u32) -> (Arc
                 queue_family_index,
                 ..Default::default()
             }],
+            enabled_extensions: DeviceExtensions {
+                ext_host_query_reset: true,
+                ..Default::default()
+            },
             ..Default::default()
         }
     ).expect("failed to create device")
 }
 
-pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> (Subbuffer<[u8]>, FenceSignalFuture<CommandBufferExecFuture<NowFuture>>) {
+pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> (Subbuffer<[u8]>, FenceSignalFuture<CommandBufferExecFuture<NowFuture>>, Arc<QueryPool>, Arc<Device>) {
     let library = VulkanLibrary::new().expect("no vulkan library");
     let instance = Instance::new(
         library, 
@@ -88,6 +100,14 @@ pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> 
 
     let (device, mut queue) = create_device(physical.clone(), select_queue_family(physical.clone()));
     let queue = queue.next().unwrap();
+
+    let query_pool = QueryPool::new(
+        device.clone(),
+            QueryPoolCreateInfo {
+                query_count: 3,
+                ..QueryPoolCreateInfo::query_type(QueryType::Timestamp)
+            }
+    ).expect("failed to create query_pool");
 
     let mem_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
@@ -174,28 +194,38 @@ pub fn launch(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> 
         CommandBufferUsage::OneTimeSubmit
     ).expect("failed to create command buffer builder");
 
-    builder
-        .bind_pipeline_compute(compute_pipeline.clone())
-        .unwrap()
-        .bind_descriptor_sets(
-            PipelineBindPoint::Compute,
-            compute_pipeline.layout().clone(),
-            0,
-        set
-        )
-        .unwrap()
-        .dispatch([resolution.x / 8, resolution.y / 8, 1])
-        .unwrap()
-        .copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(image, buf.clone()))
-        .unwrap();
+    unsafe { 
+        builder
+            .bind_pipeline_compute(compute_pipeline.clone())
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                compute_pipeline.layout().clone(),
+                0,
+            set
+            )
+            .unwrap()
+            .reset_query_pool(query_pool.clone(), 0..3)
+            .unwrap()
+            .write_timestamp(query_pool.clone(), 0, PipelineStage::TopOfPipe)
+            .unwrap()
+            .dispatch([resolution.x / 8, resolution.y / 8, 1])
+            .unwrap()
+            .write_timestamp(query_pool.clone(), 1, PipelineStage::ComputeShader)
+            .unwrap()
+            .copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(image, buf.clone()))
+            .unwrap()
+            .write_timestamp(query_pool.clone(), 2, PipelineStage::BottomOfPipe)
+            .unwrap();
+    }
     
     let command_buffer = builder.build().expect("failed to build command buffer");
 
-    let future = sync::now(device)
+    let future = sync::now(device.clone())
         .then_execute(queue, command_buffer)
         .unwrap()
         .then_signal_fence_and_flush()
         .unwrap();
     
-    (buf, future)
+    (buf, future, query_pool, device)
 }

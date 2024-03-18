@@ -31,7 +31,7 @@ pub fn scene_sdf(p: Vec3) -> ObjectInfo {
             ObjectInfo {
                 sdf: sphere_sdf(p - Vec3::new(3.0, 1.0, 0.0)),
                 ambient: Vec3::new(0.5, 0.2, 0.2),
-                diffuse: Vec3::new(0.6, 0.2, 0.2),
+                diffuse: Vec3::new(0.6, 0.5, 0.2),
                 specular: Vec3::new(2.0, 2.0,2.0),
                 shininess: 15.0
             }, 

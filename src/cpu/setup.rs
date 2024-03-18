@@ -1,6 +1,5 @@
 use glam::{Vec3, UVec2, Vec2, Mat4, Vec4, Vec4Swizzles};
 use image::{ImageBuffer, Rgba};
-use std::sync::{Arc, Mutex};
 use crate::consts::*;
 use super::sdf::scene_sdf;
 
@@ -116,7 +115,6 @@ pub fn phong_illumination(ambient: Vec3, diffuse: Vec3, specular: Vec3, alpha: f
 }
 
 pub fn launch_par(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-    let pixel_count = Arc::new(Mutex::new(0));
     let view_to_world = lookat_matrix(
         cam_pos, 
         view_vector, 
@@ -134,18 +132,11 @@ pub fn launch_par(cam_pos: Vec3, resolution: UVec2, fov: f32, view_vector: Vec3)
 
         let color = render(cam_pos, world_dir, MIN_DIST, MAX_DIST);
 
-        let mut pixel_count = pixel_count.lock().unwrap();
-        *pixel_count += 1;
-        if *pixel_count % (resolution.x * resolution.y / 10) == 0 {
-            println!("Rendered {}% cpu_image", *pixel_count * 100 / (resolution.x * resolution.y))
-        }
-
         Rgba([(color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8, 255u8])
     })
 }
 
 pub fn launch_linear(cam_pos: Vec3, resolution: UVec2, fov:f32, view_vector: Vec3) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-    let pixel_count = Arc::new(Mutex::new(0));
     let view_to_world = lookat_matrix(
         cam_pos, 
         view_vector, 
@@ -162,12 +153,6 @@ pub fn launch_linear(cam_pos: Vec3, resolution: UVec2, fov:f32, view_vector: Vec
         let world_dir = (view_to_world * Vec4::new(view_dir.x, view_dir.y, view_dir.z, 0.0)).xyz();
 
         let color = render(cam_pos, world_dir, MIN_DIST, MAX_DIST);
-
-        let mut pixel_count = pixel_count.lock().unwrap();
-        *pixel_count += 1;
-        if *pixel_count % (resolution.x * resolution.y / 10) == 0 {
-            println!("Rendered {}% cpu_image", *pixel_count * 100 / (resolution.x * resolution.y))
-        }
 
         Rgba([(color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8, 255u8])
     })
