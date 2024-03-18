@@ -50,7 +50,7 @@ fn main() {
 
     println!("CPU multi thread time: {:.2?}", multi_thread_time);
 
-    cpu_img_multi_threaded.save("cpu_img_multi_threade.png").expect("failed to save image");
+    cpu_img_multi_threaded.save("cpu_img_multi_threaded.png").expect("failed to save image");
 
     let (buf, future, query_pool, device) = gpu::setup::launch(cam_pos, resolution, fov, view_vector);
     future.wait(None).unwrap();
